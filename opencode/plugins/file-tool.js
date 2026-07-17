@@ -141,7 +141,14 @@ function readFileData(sid, fid) {
     const b64 = readFileSync(join(filesDir(sid), fid + ".b64"), "utf-8")
     const meta = readSession(sid).files[fid]
     return `data:${meta?.mime || "image/png"};base64,${b64}`
-  } catch { return null }
+  } catch {
+    // 当前会话没有，尝试主会话
+    try {
+      const mainSid = SessionStack.main
+      if (mainSid !== sid) return readFileData(mainSid, fid)
+    } catch {}
+    return null
+  }
 }
 
 function deleteSession(sid) {
@@ -196,7 +203,7 @@ export const FileTool = async () => {
 
     tool: {
       analyze_image: tool({
-        description: "用多模态模型分析图片（仅处理 image/*）。支持 file_id:N 从缓存取图或直接传 base64。先调 file_tool list 查看可用文件ID",
+        description: "用多模态模型分析图片。当用户可能发了图片（如`分析这张图`、`看看这个`等），但你看不到图片时，先调 file_tool list-cache 检查是否缓存了图片，如有则用 file_id:N 分析。也支持 file_path 直接传路径。仅处理 image/*。",
         args: {
           source: tool.schema.enum(["file_path", "base64"]).describe("file_path=file_id:N, base64=编码数据"),
           data: tool.schema.string().describe("file_id:N 或 base64 字符串"),
@@ -207,8 +214,12 @@ export const FileTool = async () => {
           if (source === "file_path" && data.startsWith("file_id:")) {
             const fid = parseInt(data.slice(8), 10)
             const store = readSession(SessionStack.current)
-            const file = store.files[fid]
-            if (!file) return `文件ID不存在: ${fid}，先调 file_tool list-cache 查看可用ID`
+            let file = store.files[fid]
+            if (!file && SessionStack.main !== SessionStack.current) {
+              const mainStore = readSession(SessionStack.main)
+              file = mainStore.files[fid]
+            }
+            if (!file) return `文件ID不存在: ${fid}`
             if (!file.mime.startsWith("image/")) return `不是图片文件: ${file.filename} (${file.mime})`
             imageUrl = readFileData(SessionStack.current, fid)
             if (!imageUrl) return `文件数据不存在: ${fid}`
