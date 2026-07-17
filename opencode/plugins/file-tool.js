@@ -1,5 +1,8 @@
 import { tool } from "@opencode-ai/plugin"
 import { existsSync, readFileSync, writeFileSync, mkdirSync, rmSync } from "node:fs"
+import createLogger from "./lib/logger.js"
+
+import { rm } from "node:fs/promises"
 import { join } from "node:path"
 
 const CONFIG_DIR = process.env.HOME || process.env.USERPROFILE
@@ -7,7 +10,7 @@ const CONFIG_PATH = join(CONFIG_DIR, ".config/opencode/file-tool.jsonc")
 const OPENCODE_CONFIG = join(CONFIG_DIR, ".config/opencode/opencode.json")
 const CACHE_DIR = join(CONFIG_DIR, ".opencode/plugins-cache")
 
-const VISION_KEYWORDS = ["vl", "vision", "visual", "omni", "agnes-2.0-flash", "agnes-image", "claude-3", "gpt-4o", "gpt-5", "gemini"]
+const log = createLogger("file-tool")
 
 // 懒加载视觉模型配置，启动时不抛错
 let _visionCfg = null
@@ -63,14 +66,6 @@ async function callVisionApi(imageUrl, prompt) {
   return msg?.content || msg?.reasoning_content || "(空)"
 }
 
-function getCurrentModel() {
-  try { return JSON.parse(readFileSync(OPENCODE_CONFIG, "utf-8")).model || "" } catch { return "" }
-}
-
-function isVisionCapable(model) {
-  return VISION_KEYWORDS.some(k => model.toLowerCase().includes(k))
-}
-
 // ====== 会话栈 ======
 const SessionStack = {
   _stack: ["default"],
@@ -96,6 +91,26 @@ function readSession(sid) {
 function writeSession(sid, data) {
   const dir = sessionDir(sid)
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
+  // 超出上限时异步删除最早的消息及文件
+  let maxMsgs = 3
+  try { const cfg = readJsonc(CONFIG_PATH); if (cfg.maxCacheMessages > 0) maxMsgs = cfg.maxCacheMessages } catch {}
+  const msgs = data.messages || []
+  if (msgs.length > maxMsgs) {
+    const expired = msgs.splice(0, msgs.length - maxMsgs)
+    for (const msg of expired) {
+      for (const fid of (msg.fileIds || [])) {
+        delete data.files[fid]
+        const path = join(dir, "files", fid + ".b64")
+        rm(path, { force: true })
+        .then(() => {
+          log.info(`${sid}: Deleted file ${path}`)
+        })
+        .catch((err) => {
+          log.error(`${sid}: Failed to delete file ${path}`, err)
+        })
+      }
+    }
+  }
   writeFileSync(join(dir, "files.json"), JSON.stringify(data, null, 2))
 }
 
@@ -118,7 +133,9 @@ function deleteSession(sid) {
   if (existsSync(dir)) rmSync(dir, { recursive: true, force: true })
 }
 
+
 export const FileTool = async () => {
+  log.loaded()
   return {
     event: async ({ event }) => {
       if (event.type === "session.created" && event.properties?.sessionID)
@@ -130,7 +147,7 @@ export const FileTool = async () => {
       if (event.type === "message.part.updated" && event.properties?.part?.type === "file" && (event.properties.part.mime || "").startsWith("image/")) {
         const part = event.properties.part
         const fn = part.filename || part.name || ""
-        if (fn && !isVisionCapable(getCurrentModel())) {
+        if (fn) {
           const sid = event.properties.sessionID || SessionStack.current
           // 首次获取到真实会话ID时更新栈
           if (sid && SessionStack.current === "default" && sid !== "default") {
