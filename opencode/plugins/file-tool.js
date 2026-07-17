@@ -69,7 +69,23 @@ async function callVisionApi(imageUrl, prompt) {
 // ====== 会话栈 ======
 const SessionStack = {
   _stack: ["default"],
-  push(id) { this._stack.push(id) },
+  _main: "default",
+  push(id) {
+    if (this._stack.length === 1 && this._stack[0] === "default") {
+      this._main = id
+    }
+    this._stack.push(id)
+  },
+  remove(id) {
+    const idx = this._stack.indexOf(id)
+    if (idx >= 0) this._stack.splice(idx)
+    if (this._stack.length === 0) this._stack.push("default")
+  },
+  get current() { return this._stack[this._stack.length - 1] },
+  get main() {
+    try { const v = readFileSync(join(CACHE_DIR, ".main-session"), "utf-8").trim(); if (v) return v } catch {}
+    return this._main && this._main !== "default" ? this._main : "default"
+  },
   remove(id) {
     const idx = this._stack.indexOf(id)
     if (idx >= 0) this._stack.splice(idx)
@@ -149,9 +165,15 @@ export const FileTool = async () => {
         const fn = part.filename || part.name || ""
         if (fn) {
           const sid = event.properties.sessionID || SessionStack.current
-          // 首次获取到真实会话ID时更新栈
+          // 首次获取到真实会话ID时更新栈并记录主会话ID
           if (sid && SessionStack.current === "default" && sid !== "default") {
             SessionStack._stack = [sid]
+            SessionStack._main = sid
+            try { writeFileSync(join(CACHE_DIR, ".main-session"), sid, "utf-8") } catch {}
+          }
+          // 首次贴图也记录主会话ID（适配主会话未触发session.created的场景）
+          if (sid && !existsSync(join(CACHE_DIR, ".main-session"))) {
+            try { writeFileSync(join(CACHE_DIR, ".main-session"), sid, "utf-8") } catch {}
           }
           const data = readSession(sid)
           const fid = data.nextId++
@@ -204,7 +226,7 @@ export const FileTool = async () => {
       }),
 
       file_tool: tool({
-        description: "文件缓存管理。list-provider=列出可用提供者, set-provider=切换图片分析模型, list-cache=查看缓存文件（默认最后1个, all=全部, N=指定数量）",
+        description: "文件缓存管理。list-provider=列出可用模型, set-provider=切换视觉模型, list-cache=查看缓存文件（默认最后1个, all=全部, N=指定数量, main=主会话最后1个, main N=主会话最后N个）",
         args: { command: tool.schema.string().describe("list-provider, set-provider <provider/model>, list-cache, list-cache all, list-cache N") },
         execute: async ({ command }) => {
           const cmd = command.trim()
@@ -227,17 +249,21 @@ export const FileTool = async () => {
             return `视觉模型已切换为: ${model}`
           }
           if (cmd === "list-cache" || cmd.startsWith("list-cache ")) {
-            const data = readSession(SessionStack.current)
-            const msgs = data.messages || []
-            if (msgs.length === 0) return `${SessionStack.current}: []`
             const arg = cmd === "list-cache" ? "1" : cmd.slice(11).trim()
+            let targetSid = SessionStack.current
+            let limit = arg
+            if (arg === "main") { targetSid = SessionStack.main; limit = "1" }
+            if (arg.startsWith("main ")) { targetSid = SessionStack.main; limit = arg.slice(5).trim() }
+            const data = readSession(targetSid)
+            const msgs = data.messages || []
+            if (msgs.length === 0) return `${targetSid}: []`
             let count = msgs.length
-            if (arg !== "all") {
-              const n = parseInt(arg, 10)
+            if (limit !== "all") {
+              const n = parseInt(limit, 10)
               if (!isNaN(n) && n > 0) count = Math.min(n, count)
             }
             const show = msgs.slice(-count)
-            let out = `${SessionStack.current}:\n`
+            let out = `${targetSid}:\n`
             for (const msg of show) {
               out += `  msg_${msg.msgId.slice(-8)}:\n`
               for (const fid of msg.fileIds) {
