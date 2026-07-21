@@ -203,11 +203,11 @@ export const FileTool = async () => {
 
     tool: {
       analyze_image: tool({
-        description: "用多模态模型分析图片。当用户可能发了图片（如`分析这张图`、`看看这个`等），但你看不到图片时，先调 file_tool list-cache 检查是否缓存了图片，如有则用 file_id:N 分析。也支持 file_path 直接传路径。仅处理 image/*。",
+        description: "用多模态模型分析图片。先调 file_tool list-cache 拿到文件ID，再用 file_id:N 分析。",
         args: {
-          source: tool.schema.enum(["file_path", "base64"]).describe("file_path=file_id:N, base64=编码数据"),
-          data: tool.schema.string().describe("file_id:N 或 base64 字符串"),
-          prompt: tool.schema.string().optional().describe("分析提示（可选）"),
+          source: tool.schema.enum(["file_path", "base64"]).describe("file_path=file_id:N"),
+          data: tool.schema.string().describe("file_id:N 或 base64"),
+          prompt: tool.schema.string().optional().describe("分析提示"),
         },
         execute: async ({ source, data, prompt }) => {
           let imageUrl
@@ -237,8 +237,8 @@ export const FileTool = async () => {
       }),
 
       file_tool: tool({
-        description: "文件缓存管理。list-provider=列出可用模型, set-provider=切换视觉模型, list-cache=查看缓存文件（默认最后1个, all=全部, N=指定数量, main=主会话最后1个, main N=主会话最后N个）",
-        args: { command: tool.schema.string().describe("list-provider, set-provider <provider/model>, list-cache, list-cache all, list-cache N") },
+        description: "文件缓存管理。当你在上下文中看到 [Image N] 或收到 Cannot read 图片错误时，立即调 list-cache 获取文件ID，再用 analyze_image file_id:N 分析。",
+        args: { command: tool.schema.string().describe("list-cache, list-cache main, list-provider, set-provider <model>") },
         execute: async ({ command }) => {
           const cmd = command.trim()
           if (cmd === "list-provider") {
