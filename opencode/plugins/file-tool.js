@@ -15,6 +15,26 @@ const log = createLogger("file-tool")
 // 懒加载视觉模型配置，启动时不抛错
 let _visionCfg = null
 
+const LANG = (() => { try { return readJsonc(CONFIG_PATH).lang || "zh" } catch { return "zh" } })()
+
+const DESC = {
+  analyze_image: {
+    zh: "用多模态模型分析图片。先调 file_tool list-cache 拿到文件ID，再用 file_id:N 分析。",
+    en: "Analyze images with multimodal model. Call file_tool list-cache first to get file IDs, then use file_id:N.",
+  },
+  file_tool: {
+    zh: "文件缓存管理。当你在上下文中看到 [Image N] 或收到 Cannot read 图片错误时，立即调 list-cache 获取文件ID，再用 analyze_image file_id:N 分析。",
+    en: "File cache manager. When you see [Image N] or a Cannot read image error, call list-cache to get file IDs, then use analyze_image file_id:N.",
+  },
+  file_tool_args: {
+    zh: "list-cache, list-cache main, list-provider, set-provider <model>",
+    en: "list-cache, list-cache main, list-provider, set-provider <model>",
+  },
+  analyze_args_source: { zh: "file_path=file_id:N", en: "file_path=file_id:N" },
+  analyze_args_data: { zh: "file_id:N 或 base64", en: "file_id:N or base64" },
+  analyze_args_prompt: { zh: "分析提示", en: "prompt" },
+}
+
 function getVisionConfig() {
   if (_visionCfg) return _visionCfg
   const cfg = existsSync(CONFIG_PATH) ? readJsonc(CONFIG_PATH) : {}
@@ -203,11 +223,11 @@ export const FileTool = async () => {
 
     tool: {
       analyze_image: tool({
-        description: "用多模态模型分析图片。先调 file_tool list-cache 拿到文件ID，再用 file_id:N 分析。",
+        description: DESC.analyze_image[LANG],
         args: {
-          source: tool.schema.enum(["file_path", "base64"]).describe("file_path=file_id:N"),
-          data: tool.schema.string().describe("file_id:N 或 base64"),
-          prompt: tool.schema.string().optional().describe("分析提示"),
+          source: tool.schema.enum(["file_path", "base64"]).describe(DESC.analyze_args_source[LANG]),
+          data: tool.schema.string().describe(DESC.analyze_args_data[LANG]),
+          prompt: tool.schema.string().optional().describe(DESC.analyze_args_prompt[LANG]),
         },
         execute: async ({ source, data, prompt }) => {
           let imageUrl
@@ -237,8 +257,8 @@ export const FileTool = async () => {
       }),
 
       file_tool: tool({
-        description: "文件缓存管理。当你在上下文中看到 [Image N] 或收到 Cannot read 图片错误时，立即调 list-cache 获取文件ID，再用 analyze_image file_id:N 分析。",
-        args: { command: tool.schema.string().describe("list-cache, list-cache main, list-provider, set-provider <model>") },
+        description: DESC.file_tool[LANG],
+        args: { command: tool.schema.string().describe(DESC.file_tool_args[LANG]) },
         execute: async ({ command }) => {
           const cmd = command.trim()
           if (cmd === "list-provider") {
