@@ -23,7 +23,7 @@ function readJsonc(path) {
 
 function resolveCfg(opts) {
   const cfg = existsSync(join(GLOBAL_DIR, CONFIG_NAME)) ? readJsonc(join(GLOBAL_DIR, CONFIG_NAME)) : {}
-  return { ...defaults, ...cfg, ...opts }
+  return { ...defaults, ...cfg, ...(opts || {}) }
 }
 
 export default function createLogger(name, opts) {
