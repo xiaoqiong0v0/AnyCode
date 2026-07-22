@@ -5,7 +5,7 @@ import { homedir } from "node:os"
 const pad = (n, w = 2) => String(n).padStart(w, "0")
 
 const GLOBAL_DIR = join(homedir(), ".config", "opencode")
-const CONFIG_NAME = "opencode-plugin-logger.jsonc"
+const CONFIG_NAME = "plugin-logger.jsonc"
 
 const defaults = {
   dir: join(homedir(), ".opencode", "plugins-log"),
