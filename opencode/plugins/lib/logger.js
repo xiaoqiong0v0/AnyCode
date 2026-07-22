@@ -1,8 +1,11 @@
-import { appendFileSync, mkdirSync, existsSync, readdirSync, unlinkSync, statSync } from "node:fs"
+import { appendFileSync, mkdirSync, existsSync, readdirSync, unlinkSync, statSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 import { homedir } from "node:os"
 
 const pad = (n, w = 2) => String(n).padStart(w, "0")
+
+const GLOBAL_DIR = join(homedir(), ".config", "opencode")
+const CONFIG_NAME = "opencode-plugin-logger.jsonc"
 
 const defaults = {
   dir: join(homedir(), ".opencode", "plugins-log"),
@@ -11,8 +14,23 @@ const defaults = {
   enabled: false,
 }
 
+function readJsonc(path) {
+  try {
+    const raw = readFileSync(path, "utf-8").replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "")
+    return JSON.parse(raw)
+  } catch { return {} }
+}
+
+function resolveCfg(opts) {
+  const global = existsSync(join(GLOBAL_DIR, CONFIG_NAME)) ? readJsonc(join(GLOBAL_DIR, CONFIG_NAME)) : {}
+  const projectDir = opts?.projectDir || process.cwd()
+  const project = existsSync(join(projectDir, CONFIG_NAME)) ? readJsonc(join(projectDir, CONFIG_NAME))
+    : existsSync(join(projectDir, ".opencode", CONFIG_NAME)) ? readJsonc(join(projectDir, ".opencode", CONFIG_NAME)) : {}
+  return { ...defaults, ...global, ...project, ...opts }
+}
+
 export default function createLogger(name, opts) {
-  const cfg = { ...defaults, ...opts }
+  const cfg = resolveCfg(opts)
   if (!cfg.enabled) return { loaded() {}, info() {}, error() {}, hook() {}, tool() {} }
 
   const logDir = cfg.dir
