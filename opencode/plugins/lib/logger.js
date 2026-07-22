@@ -1,58 +1,65 @@
-import { appendFileSync, mkdirSync, existsSync, readdirSync, rmdirSync, unlinkSync, statSync } from "node:fs"
+import { appendFileSync, mkdirSync, existsSync, readdirSync, unlinkSync, statSync } from "node:fs"
 import { join } from "node:path"
+import { homedir } from "node:os"
 
-const LOG_DIR = join(process.env.USERPROFILE || "~", ".opencode", "plugins-log")
+const pad = (n, w = 2) => String(n).padStart(w, "0")
 
-export default function createLogger(name) {
-  if (!existsSync(LOG_DIR)) mkdirSync(LOG_DIR, { recursive: true })
+const defaults = {
+  dir: join(homedir(), ".opencode", "plugins-log"),
+  timeFormat: "yyyy-MM-dd HH:mm:ss",
+  retentionDays: 7,
+  enabled: false,
+}
 
-  const today = () => {
-    const d = new Date()
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
+export default function createLogger(name, opts) {
+  const cfg = { ...defaults, ...opts }
+  if (!cfg.enabled) return { loaded() {}, info() {}, error() {}, hook() {}, tool() {} }
+
+  const logDir = cfg.dir
+  if (!existsSync(logDir)) mkdirSync(logDir, { recursive: true })
+
+  const formatTime = (ts) => {
+    const d = new Date(ts)
+    let s = cfg.timeFormat
+    s = s.replace("yyyy", d.getFullYear())
+    s = s.replace("MM", pad(d.getMonth() + 1))
+    s = s.replace("dd", pad(d.getDate()))
+    s = s.replace("HH", pad(d.getHours()))
+    s = s.replace("mm", pad(d.getMinutes()))
+    s = s.replace("ss", pad(d.getSeconds()))
+    s = s.replace("SSS", pad(d.getMilliseconds(), 3))
+    return s
   }
 
-  const cleanOldLogs = () => {
+  const cleanOld = () => {
+    if (!cfg.retentionDays) return
+    const maxAge = cfg.retentionDays * 86400000
+    const now = Date.now()
     try {
-      const now = Date.now()
-      const maxAge = 7 * 86400000
-      for (const f of readdirSync(LOG_DIR)) {
-        if (f.startsWith(name)) continue
+      for (const f of readdirSync(logDir)) {
         if (!f.match(/^\d{4}-\d{2}-\d{2}\.log$/)) continue
-        const p = join(LOG_DIR, f)
-        try {
-          if (now - statSync(p).mtimeMs > maxAge) unlinkSync(p)
-        } catch {}
+        try { if (now - statSync(join(logDir, f)).mtimeMs > maxAge) unlinkSync(join(logDir, f)) } catch {}
       }
     } catch {}
   }
 
-  let currentDay = today()
-  let logFile = join(LOG_DIR, `${currentDay}.log`)
+  let currentDay = formatTime(Date.now()).slice(0, 10)
+  let logFile = join(logDir, currentDay.replace(/-/g, "") + ".log")
 
   const write = (level, msg) => {
-    const ts = new Date()
-    const pad = (n) => String(n).padStart(2, "0")
-    const line = `[${ts.getFullYear()}-${pad(ts.getMonth()+1)}-${pad(ts.getDate())} ${pad(ts.getHours())}:${pad(ts.getMinutes())}:${pad(ts.getSeconds())}] [${level}] ${name} ${msg}`
-
-    const day = today()
-    if (day !== currentDay) {
-      currentDay = day
-      logFile = join(LOG_DIR, `${day}.log`)
-      cleanOldLogs()
-    }
-    try { appendFileSync(logFile, line + "\n") } catch {}
+    const now = Date.now()
+    const day = formatTime(now).slice(0, 10)
+    if (day !== currentDay) { currentDay = day; logFile = join(logDir, day.replace(/-/g, "") + ".log"); cleanOld() }
+    try { appendFileSync(logFile, `[${formatTime(now)}] [${level}] ${name} ${msg}\n`) } catch {}
   }
 
-  cleanOldLogs()
+  cleanOld()
 
   return {
     loaded: () => write("INFO", "loaded"),
     info: (msg) => write("INFO", msg),
-    error: (msg, err) => {
-      const text = err ? `${msg} — ${err.message || err}` : msg
-      write("ERROR", text)
-    },
-    hook: (hook, detail) => write("HOOK", `${hook}${detail ? " → " + detail : ""}`),
-    tool: (toolName, args) => write("TOOL", `${toolName}(${JSON.stringify(args).slice(0, 200)})`),
+    error: (msg, err) => write("ERROR", err ? `${msg} — ${err.message || err}` : msg),
+    hook: (h, d) => write("HOOK", `${h}${d ? " → " + d : ""}`),
+    tool: (t, a) => write("TOOL", `${t}(${JSON.stringify(a).slice(0, 200)})`),
   }
 }
