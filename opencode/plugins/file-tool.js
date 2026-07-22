@@ -1,6 +1,6 @@
 import { tool } from "@opencode-ai/plugin"
 import { existsSync, readFileSync, writeFileSync, mkdirSync, rmSync } from "node:fs"
-import createLogger from "./lib/logger.js"
+import createLogger from "@xiaoqiong0v0/opencode-plugin-logger"
 
 import { rm } from "node:fs/promises"
 import { join } from "node:path"
