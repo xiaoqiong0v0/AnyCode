@@ -22,11 +22,8 @@ function readJsonc(path) {
 }
 
 function resolveCfg(opts) {
-  const global = existsSync(join(GLOBAL_DIR, CONFIG_NAME)) ? readJsonc(join(GLOBAL_DIR, CONFIG_NAME)) : {}
-  const projectDir = opts?.projectDir || process.cwd()
-  const project = existsSync(join(projectDir, CONFIG_NAME)) ? readJsonc(join(projectDir, CONFIG_NAME))
-    : existsSync(join(projectDir, ".opencode", CONFIG_NAME)) ? readJsonc(join(projectDir, ".opencode", CONFIG_NAME)) : {}
-  return { ...defaults, ...global, ...project, ...opts }
+  const cfg = existsSync(join(GLOBAL_DIR, CONFIG_NAME)) ? readJsonc(join(GLOBAL_DIR, CONFIG_NAME)) : {}
+  return { ...defaults, ...cfg, ...opts }
 }
 
 export default function createLogger(name, opts) {
