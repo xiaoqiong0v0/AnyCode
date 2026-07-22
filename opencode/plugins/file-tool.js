@@ -10,7 +10,7 @@ const CONFIG_PATH = join(CONFIG_DIR, ".config/opencode/file-tool.jsonc")
 const OPENCODE_CONFIG = join(CONFIG_DIR, ".config/opencode/opencode.json")
 const CACHE_DIR = join(CONFIG_DIR, ".opencode/plugins-cache")
 
-const log = createLogger("file-tool")
+const log = createLogger("file-tool", { enabled: true })
 
 // 懒加载视觉模型配置，启动时不抛错
 let _visionCfg = null
